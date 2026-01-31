@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Secrets & credentials
+aws.md
+taskdef_*.json
+credentials.json
+*.pem
+*.key
+
+# Internal planning docs
+PLAN.md
+PLAN2.md
+task[0-9]*.md
+nul
+
+# Claude Code project config (user-specific)
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

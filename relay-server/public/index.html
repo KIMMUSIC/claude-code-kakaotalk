@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kakao Relay - Claude Code HITL Bridge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 3rem;
+      max-width: 520px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+      color: #1a1a2e;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .features {
+      text-align: left;
+      margin: 1.5rem 0;
+      padding: 0;
+      list-style: none;
+    }
+    .features li {
+      padding: 0.6rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+      color: #444;
+      font-size: 0.9rem;
+    }
+    .features li::before {
+      content: "\2713";
+      position: absolute;
+      left: 0;
+      color: #667eea;
+      font-weight: bold;
+    }
+    .btn-primary {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 0.9rem 2.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1.05rem;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 1rem;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+    }
+    .note {
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: #999;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Kakao Relay</h1>
+    <p class="subtitle">
+      Claude Code와 카카오톡을 연결하는 HITL(Human-In-The-Loop) 브리지입니다.<br>
+      AI가 사용자에게 직접 질문하고 답변을 받을 수 있습니다.
+    </p>
+
+    <ul class="features">
+      <li>Claude Code에서 카카오톡으로 질문 전송</li>
+      <li>카카오톡에서 바로 답변 (선택지/자유입력)</li>
+      <li>"나에게 보내기"로 실시간 알림</li>
+      <li>MCP 프로토콜 기반 손쉬운 연동</li>
+    </ul>
+
+    <a id="loginBtn" class="btn-primary" href="#">시작하기</a>
+
+    <p class="note">
+      "시작하기"를 누르면 회원가입/로그인 페이지로 이동합니다.<br>
+      이미 계정이 있다면 바로 로그인됩니다.
+    </p>
+  </div>
+
+  <script>
+    // Cognito Hosted UI Login URL 생성
+    // 환경에 맞는 값으로 자동 구성
+    (function() {
+      // 현재 호스트 기반으로 callback URL 결정
+      var callbackUrl = window.location.origin + '/auth/callback';
+
+      // Cognito Hosted UI 파라미터
+      var cognitoDomain = 'kakao-relay.auth.ap-northeast-2.amazoncognito.com';
+      var clientId = '2nrjsv33bdmk7rfar5ptmveb80';
+      var scopes = 'openid email profile';
+
+      var loginUrl = 'https://' + cognitoDomain + '/login'
+        + '?client_id=' + encodeURIComponent(clientId)
+        + '&response_type=code'
+        + '&scope=' + encodeURIComponent(scopes)
+        + '&redirect_uri=' + encodeURIComponent(callbackUrl);
+
+      document.getElementById('loginBtn').href = loginUrl;
+
+      // 이미 로그인되어 있으면 대시보드로 이동
+      if (sessionStorage.getItem('id_token')) {
+        window.location.href = '/dashboard.html';
+      }
+    })();
+  </script>
+</body>
+</html>
