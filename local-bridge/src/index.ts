@@ -341,6 +341,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'kakao.link_chatbot',
+      description:
+        'Link a KakaoTalk chatbot user to this account using a link code. ' +
+        'The user receives the code from the chatbot, then provides it here to complete linking.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          link_code: {
+            type: 'string',
+            description: 'The 6-character link code received from the KakaoTalk chatbot',
+          },
+          target_user_id: {
+            type: 'string',
+            description: 'Target user ID. Falls back to TARGET_USER_ID env.',
+          },
+        },
+        required: ['link_code'],
+      },
+    },
+    {
       name: 'kakao.notify_user',
       description:
         'Send a notification to the user via KakaoTalk. Fire-and-forget — no reply expected.',
@@ -396,6 +416,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: 'text' as const, text: JSON.stringify(result) }],
       isError: result.status === 'ERROR',
     };
+  }
+
+  if (name === 'kakao.link_chatbot') {
+    const { link_code, target_user_id } = (args ?? {}) as {
+      link_code: string;
+      target_user_id?: string;
+    };
+
+    if (!link_code) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, error_code: 'INVALID_INPUT', error_message: 'link_code is required.' }) }],
+        isError: true,
+      };
+    }
+
+    const resolvedTargetUserId = target_user_id || DEFAULT_TARGET_USER_ID || undefined;
+    if (!resolvedTargetUserId) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, error_code: 'INVALID_INPUT', error_message: 'target_user_id is required (set TARGET_USER_ID env or pass as argument).' }) }],
+        isError: true,
+      };
+    }
+
+    const linkBody: Record<string, unknown> = { link_code, target_user_id: resolvedTargetUserId };
+
+    try {
+      const res = await withRetry(() =>
+        relayFetchWithRefresh('/v1/link-chatbot', {
+          method: 'POST',
+          body: JSON.stringify(linkBody),
+        }),
+      );
+
+      const data = (await res.json()) as Record<string, unknown>;
+      const isOk = res.status >= 200 && res.status < 300 && data.ok === true;
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+        isError: !isOk,
+      };
+    } catch (err) {
+      const errMsg = describeError(err);
+      log(`[link-chatbot] network error: ${errMsg}`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, error_code: 'NETWORK_ERROR', error_message: `Failed to link chatbot: ${errMsg}` }) }],
+        isError: true,
+      };
+    }
   }
 
   if (name === 'kakao.notify_user') {

@@ -99,14 +99,7 @@ Claude Code 프로젝트의 `.claude/mcp.json` 파일에 아래 내용을 추가
 
 1. **카카오톡에서 챗봇에 아무 메시지**를 보냅니다.
 2. 챗봇이 **연동 코드**(예: `A3X7B2`)를 응답합니다.
-3. 아래 명령으로 연동을 완료합니다:
-
-```bash
-curl -X POST https://<your-domain>/v1/link-chatbot \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-auth-token>" \
-  -d '{"link_code":"<연동코드>","target_user_id":"<your-user-id>"}'
-```
+3. **Claude Code에게 연동 코드를 알려줍니다**: "연동 코드는 A3X7B2야" 라고 입력하면 자동으로 연동됩니다.
 
 연동은 최초 1회만 필요합니다. 이후 챗봇에서 보내는 답변이 자동으로 사용자와 매칭됩니다.
 
@@ -147,6 +140,15 @@ curl -X POST https://<your-domain>/v1/link-chatbot \
 - `RESOLVED`: 사용자가 답변함
 - `EXPIRED`: 타임아웃
 - `ERROR`: 오류 발생
+
+### `kakao.link_chatbot`
+
+카카오 챗봇 연동 코드를 사용하여 챗봇 사용자 ID를 계정에 연결합니다. 최초 1회만 실행하면 됩니다.
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|----------|------|------|------|
+| `link_code` | string | Y | 챗봇에서 받은 6자리 연동 코드 |
+| `target_user_id` | string | N | 대상 사용자 ID (미지정 시 env TARGET_USER_ID 사용) |
 
 ### `kakao.notify_user`
 
