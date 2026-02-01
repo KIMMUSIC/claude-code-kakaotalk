@@ -93,7 +93,24 @@ Claude Code 프로젝트의 `.claude/mcp.json` 파일에 아래 내용을 추가
 - `<설치경로>`: Step 2에서 clone한 절대 경로 (예: `/home/user`, `C:\\Users\\user`)
 - `<your-user-id>`: 대시보드에서 확인할 수 있는 User ID
 
-### Step 5: 테스트
+### Step 5: 카카오 챗봇 연동
+
+카카오톡 챗봇에서 답변을 받으려면 챗봇 사용자 ID를 연결해야 합니다.
+
+1. **카카오톡에서 챗봇에 아무 메시지**를 보냅니다.
+2. 챗봇이 **연동 코드**(예: `A3X7B2`)를 응답합니다.
+3. 아래 명령으로 연동을 완료합니다:
+
+```bash
+curl -X POST https://<your-domain>/v1/link-chatbot \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-auth-token>" \
+  -d '{"link_code":"<연동코드>","target_user_id":"<your-user-id>"}'
+```
+
+연동은 최초 1회만 필요합니다. 이후 챗봇에서 보내는 답변이 자동으로 사용자와 매칭됩니다.
+
+### Step 6: 테스트
 
 1. Claude Code를 재시작합니다.
 2. Claude에게 "카카오톡으로 사용자에게 확인해줘"라고 요청합니다.
@@ -133,13 +150,14 @@ Claude Code 프로젝트의 `.claude/mcp.json` 파일에 아래 내용을 추가
 
 ### `kakao.notify_user`
 
-사용자에게 알림을 보냅니다 (현재는 로그 출력만).
+카카오톡 "나에게 보내기"로 사용자에게 알림을 발송합니다.
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |----------|------|------|------|
 | `session_id` | string | Y | UUID v4 세션 식별자 |
 | `text` | string | Y | 알림 텍스트 |
 | `severity` | string | N | 심각도: INFO, WARNING, DANGER |
+| `target_user_id` | string | N | 대상 사용자 ID (미지정 시 env TARGET_USER_ID 사용) |
 
 ## 인증 방식
 
@@ -171,10 +189,14 @@ claude-code-kakaotalk/
 │   │   │   ├── questions.ts    # POST /v1/sessions/:id/questions
 │   │   │   ├── replies.ts      # GET /v1/sessions/:id/replies
 │   │   │   ├── webhook.ts      # POST /webhook/kakao
+│   │   │   ├── notify.ts       # POST /v1/notify
+│   │   │   ├── linkChatbot.ts  # POST /v1/link-chatbot
 │   │   │   ├── kakaoAuth.ts    # Kakao OAuth 연동
 │   │   │   └── cognitoAuth.ts  # Cognito 인증 엔드포인트
 │   │   ├── middleware/
 │   │   │   └── auth.ts         # JWT/Token 인증 미들웨어
+│   │   ├── store/
+│   │   │   └── linkCodes.ts    # 챗봇 연동 코드 관리
 │   │   ├── services/
 │   │   │   └── tokenVault.ts   # DynamoDB 토큰 저장소
 │   │   └── outbound/
@@ -260,11 +282,17 @@ docker build -t kakao-relay-server .
 
 - 이미 대기 중인 질문이 있습니다. 카카오톡에서 먼저 답변하세요.
 
+### 카카오톡에서 "연동이 필요합니다" 메시지가 나오는 경우
+
+- 챗봇 연동이 완료되지 않은 상태입니다. Step 5의 챗봇 연동 절차를 진행하세요.
+- 연동 코드는 10분 내 사용해야 하며, 만료 시 챗봇에 다시 메시지를 보내면 새 코드가 발급됩니다.
+
 ### 카카오톡에서 답변했는데 응답이 안 오는 경우
 
 1. 카카오 챗봇 관리센터에서 웹훅 URL이 올바른지 확인하세요.
 2. 카카오 연동이 완료되었는지 대시보드에서 확인하세요.
-3. Relay Server 로그를 확인하세요.
+3. 챗봇 연동이 완료되었는지 확인하세요 (위 항목 참조).
+4. Relay Server 로그를 확인하세요: `GET /webhook/kakao/health`로 webhook 호출 통계를 볼 수 있습니다.
 
 ### Claude Code에서 MCP 도구가 안 보이는 경우
 

@@ -4,8 +4,10 @@ import healthRouter from './routes/health';
 import questionsRouter from './routes/questions';
 import repliesRouter from './routes/replies';
 import webhookRouter from './routes/webhook';
+import notifyRouter from './routes/notify';
 import kakaoAuthRouter from './routes/kakaoAuth';
 import cognitoAuthRouter from './routes/cognitoAuth';
+import linkChatbotRouter from './routes/linkChatbot';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
@@ -14,8 +16,8 @@ if (!process.env.AUTH_TOKEN) {
   console.error('[FATAL] AUTH_TOKEN 환경변수가 설정되지 않았습니다.');
   process.exit(1);
 }
-if (!process.env.FIXED_USER_KEY) {
-  console.warn('[WARN] FIXED_USER_KEY 환경변수가 설정되지 않았습니다. 카카오 웹훅이 모든 사용자를 거부합니다.');
+if (!process.env.FIXED_USER_KEY && !process.env.DDB_TABLE_KAKAO_TOKENS) {
+  console.warn('[WARN] FIXED_USER_KEY와 DDB_TABLE_KAKAO_TOKENS이 모두 미설정입니다. 카카오 웹훅이 모든 사용자를 거부합니다.');
 }
 
 // ── Cognito JWT 환경변수 확인 (Mode B, 선택적) ────────────
@@ -57,8 +59,10 @@ app.use(healthRouter);
 app.use(questionsRouter);
 app.use(repliesRouter);
 app.use(webhookRouter);
+app.use(notifyRouter);
 app.use(kakaoAuthRouter);
 app.use(cognitoAuthRouter);
+app.use(linkChatbotRouter);
 
 // ── Static files (Web Portal — 라우터 뒤에 배치) ────────
 app.use(express.static(path.join(__dirname, '..', 'public')));

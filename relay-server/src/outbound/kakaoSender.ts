@@ -23,6 +23,13 @@ export interface SendQuestionInput {
   target_user_id?: string; // Mode B: DDB 토큰 조회용
 }
 
+export interface SendNotificationInput {
+  session_id: string;
+  text: string;
+  severity: 'INFO' | 'WARNING' | 'DANGER';
+  target_user_id?: string; // Mode B: DDB 토큰 조회용
+}
+
 export interface SendResult {
   ok: boolean;
   provider_message_id?: string;
@@ -32,6 +39,7 @@ export interface SendResult {
 
 export interface KakaoSender {
   sendQuestion(input: SendQuestionInput): Promise<SendResult>;
+  sendNotification(input: SendNotificationInput): Promise<SendResult>;
 }
 
 export interface BizMessageConfig {
@@ -154,6 +162,23 @@ export function buildMemoTemplateObject(questionText: string, choices: string[])
   });
 }
 
+// ── Kakao Memo Notification Builder ─────────────────────────
+
+export function buildMemoNotificationTemplate(text: string, severity: string): string {
+  const prefix = severity === 'DANGER' ? '[긴급] '
+    : severity === 'WARNING' ? '[주의] '
+    : '';
+
+  return JSON.stringify({
+    object_type: 'text',
+    text: `${prefix}${text}`,
+    link: {
+      web_url: 'https://vintagelane.store',
+      mobile_web_url: 'https://vintagelane.store',
+    },
+  });
+}
+
 // ── Send Payload Builder (exported for testing) ────────────
 
 export function buildSendPayload(
@@ -264,6 +289,44 @@ class BizMessageKakaoSender implements KakaoSender {
       const msg = err instanceof Error ? err.message : String(err);
       const code = err instanceof HttpError ? `HTTP_${err.status}` : 'NETWORK_ERROR';
       console.error(`[send_failed] session=${session_id} cid=${message_id} error=${code}`);
+      return { ok: false, error_code: code, error_message: msg };
+    }
+  }
+
+  async sendNotification(input: SendNotificationInput): Promise<SendResult> {
+    const { session_id, text, severity } = input;
+    try {
+      const token = await this.tokenManager.getToken();
+      const url = `https://${this.config.baseUrl}/v2/send/kakao`;
+      const prefix = severity === 'DANGER' ? '[긴급] ' : severity === 'WARNING' ? '[주의] ' : '';
+      const payload = JSON.stringify({
+        message_type: 'AT',
+        sender_key: this.config.senderKey,
+        cid: session_id,
+        template_code: this.config.templateCode,
+        phone_number: this.config.phoneNumber,
+        sender_no: this.config.senderNo,
+        message: `${prefix}${text}`,
+        fall_back_yn: false,
+      });
+
+      const res = await withRetry(async () => {
+        const r = await httpRequest(url, 'POST', {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }, payload);
+        if (r.status >= 500) throw new HttpError(r.status, `Send server error: ${r.status}`);
+        if (r.status >= 400) throw new HttpError(r.status, `Send client error: ${r.status}`);
+        return r;
+      });
+
+      const data = JSON.parse(res.body);
+      console.log(`[sender_ok] notify session=${session_id}`);
+      return { ok: true, provider_message_id: data.message_id ?? session_id };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = err instanceof HttpError ? `HTTP_${err.status}` : 'NETWORK_ERROR';
+      console.error(`[send_failed] notify session=${session_id} error=${code}`);
       return { ok: false, error_code: code, error_message: msg };
     }
   }
@@ -387,6 +450,62 @@ class KakaoMemoSender implements KakaoSender {
       return null;
     }
   }
+
+  async sendNotification(input: SendNotificationInput): Promise<SendResult> {
+    const { session_id, text, severity, target_user_id } = input;
+
+    if (!target_user_id) {
+      console.warn(`[kakao-memo] notify: no target_user_id, skipping session=${session_id}`);
+      return { ok: false, error_code: 'NO_TARGET_USER', error_message: 'target_user_id is required for kakao_memo' };
+    }
+
+    try {
+      const tokens = await getKakaoTokens(target_user_id);
+      if (!tokens) {
+        console.warn(`[kakao-memo] notify: no tokens for user=${target_user_id} session=${session_id}`);
+        return { ok: false, error_code: 'NO_TOKENS', error_message: 'User has not connected Kakao account' };
+      }
+
+      let accessToken = tokens.access_token;
+
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      if (tokens.expires_at <= nowEpoch + 60) {
+        const refreshed = await this.refreshAccessToken(tokens.refresh_token, target_user_id, tokens);
+        if (!refreshed) {
+          return { ok: false, error_code: 'REFRESH_FAILED', error_message: 'Failed to refresh Kakao access token' };
+        }
+        accessToken = refreshed;
+      }
+
+      const templateObject = buildMemoNotificationTemplate(text, severity);
+      const body = `template_object=${encodeURIComponent(templateObject)}`;
+
+      const res = await withRetry(async () => {
+        const r = await httpRequest(
+          'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+          'POST',
+          {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body,
+        );
+        if (r.status >= 500) throw new HttpError(r.status, `Kakao memo server error: ${r.status}`);
+        if (r.status === 401) throw new HttpError(401, 'Kakao access token invalid');
+        if (r.status >= 400) throw new HttpError(r.status, `Kakao memo client error: ${r.status}`);
+        return r;
+      });
+
+      const data = JSON.parse(res.body);
+      console.log(`[kakao-memo] notify sent session=${session_id} result_code=${data.result_code ?? 0}`);
+      return { ok: true, provider_message_id: session_id };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = err instanceof HttpError ? `HTTP_${err.status}` : 'NETWORK_ERROR';
+      console.error(`[kakao-memo] notify failed session=${session_id} error=${code}`);
+      return { ok: false, error_code: code, error_message: msg };
+    }
+  }
 }
 
 // ── Mock Senders ──────────────────────────────────────────
@@ -396,6 +515,11 @@ class MockBizMessageKakaoSender implements KakaoSender {
     console.log(`[sender_ok] MOCK bizmessage session=${input.session_id} cid=${input.message_id}`);
     return { ok: true, provider_message_id: `mock-${input.message_id}` };
   }
+
+  async sendNotification(input: SendNotificationInput): Promise<SendResult> {
+    console.log(`[sender_ok] MOCK bizmessage notify session=${input.session_id}`);
+    return { ok: true, provider_message_id: `mock-notify-${input.session_id}` };
+  }
 }
 
 class MockKakaoMemoSender implements KakaoSender {
@@ -403,12 +527,21 @@ class MockKakaoMemoSender implements KakaoSender {
     console.log(`[sender_ok] MOCK kakao_memo session=${input.session_id} cid=${input.message_id} user=${input.target_user_id ?? 'N/A'}`);
     return { ok: true, provider_message_id: `mock-memo-${input.message_id}` };
   }
+
+  async sendNotification(input: SendNotificationInput): Promise<SendResult> {
+    console.log(`[sender_ok] MOCK kakao_memo notify session=${input.session_id} user=${input.target_user_id ?? 'N/A'}`);
+    return { ok: true, provider_message_id: `mock-memo-notify-${input.session_id}` };
+  }
 }
 
 // ── No-op Sender ───────────────────────────────────────────
 
 class NoopKakaoSender implements KakaoSender {
   async sendQuestion(_input: SendQuestionInput): Promise<SendResult> {
+    return { ok: true };
+  }
+
+  async sendNotification(_input: SendNotificationInput): Promise<SendResult> {
     return { ok: true };
   }
 }

@@ -343,7 +343,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'kakao.notify_user',
       description:
-        'Send a notification to the user. MVP: logs to console only (no Relay endpoint yet).',
+        'Send a notification to the user via KakaoTalk. Fire-and-forget — no reply expected.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -359,6 +359,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             enum: ['INFO', 'WARNING', 'DANGER'],
             description: 'Severity level (default: INFO)',
+          },
+          target_user_id: {
+            type: 'string',
+            description: 'Target user ID (Cognito sub) for SaaS mode. Falls back to TARGET_USER_ID env.',
           },
         },
         required: ['session_id', 'text'],
@@ -395,15 +399,79 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === 'kakao.notify_user') {
-    const { session_id, text, severity } = (args ?? {}) as {
+    const { session_id, text, severity, target_user_id } = (args ?? {}) as {
       session_id: string;
       text: string;
       severity?: string;
+      target_user_id?: string;
     };
-    log(`[notify] [${severity ?? 'INFO'}] session=${session_id}: ${text}`);
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ ok: true }) }],
+
+    if (!session_id || !text) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              ok: false,
+              error_code: 'INVALID_INPUT',
+              error_message: 'session_id and text are required.',
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const resolvedTargetUserId = target_user_id || DEFAULT_TARGET_USER_ID || undefined;
+
+    const notifyBody: Record<string, unknown> = {
+      session_id,
+      text,
+      severity: severity ?? 'INFO',
     };
+    if (resolvedTargetUserId) {
+      notifyBody.target_user_id = resolvedTargetUserId;
+    }
+
+    try {
+      const res = await withRetry(() =>
+        relayFetchWithRefresh('/v1/notify', {
+          method: 'POST',
+          body: JSON.stringify(notifyBody),
+        }),
+      );
+
+      if (res.status === 401) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, error_code: 'UNAUTHORIZED', error_message: 'Authentication failed.' }) }],
+          isError: true,
+        };
+      }
+
+      const data = (await res.json()) as Record<string, unknown>;
+      const isOk = res.status >= 200 && res.status < 300 && data.ok === true;
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+        isError: !isOk,
+      };
+    } catch (err) {
+      const errMsg = describeError(err);
+      log(`[notify] network error: ${errMsg}`);
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              ok: false,
+              error_code: 'NETWORK_ERROR',
+              error_message: `Failed to send notification: ${errMsg}`,
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
   }
 
   return {

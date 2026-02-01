@@ -3,7 +3,7 @@
 // 민감값(토큰, 시크릿)은 로그에 절대 출력하지 않는다.
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { KMSClient, EncryptCommand, DecryptCommand } from '@aws-sdk/client-kms';
 
 // ── ENV ────────────────────────────────────────────────────
@@ -161,6 +161,43 @@ export async function getUserIdByKakaoUserKey(kakaoUserKey: string): Promise<str
       IndexName: 'kakao_user_key-index',
       KeyConditionExpression: 'kakao_user_key = :k',
       ExpressionAttributeValues: { ':k': kakaoUserKey },
+      Limit: 1,
+    }),
+  );
+
+  if (!result.Items || result.Items.length === 0) return null;
+  return (result.Items[0].user_id as string) ?? null;
+}
+
+// ── chatbot user_id 저장 (기존 레코드에 추가) ──────────────
+
+export async function saveChatbotUserId(userId: string, chatbotUserId: string): Promise<void> {
+  if (!DDB_TABLE) throw new Error('DDB_TABLE_KAKAO_TOKENS is not configured');
+
+  await getDdbDoc().send(
+    new UpdateCommand({
+      TableName: DDB_TABLE,
+      Key: { user_id: userId },
+      UpdateExpression: 'SET kakao_chatbot_user_id = :cuid, updated_at = :now',
+      ExpressionAttributeValues: {
+        ':cuid': chatbotUserId,
+        ':now': new Date().toISOString(),
+      },
+    }),
+  );
+}
+
+// ── user_id 역조회 (kakao_chatbot_user_id GSI) ─────────────
+
+export async function getUserIdByChatbotUserId(chatbotUserId: string): Promise<string | null> {
+  if (!DDB_TABLE) throw new Error('DDB_TABLE_KAKAO_TOKENS is not configured');
+
+  const result = await getDdbDoc().send(
+    new QueryCommand({
+      TableName: DDB_TABLE,
+      IndexName: 'kakao_chatbot_user_id-index',
+      KeyConditionExpression: 'kakao_chatbot_user_id = :k',
+      ExpressionAttributeValues: { ':k': chatbotUserId },
       Limit: 1,
     }),
   );
